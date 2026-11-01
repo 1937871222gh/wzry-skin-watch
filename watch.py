@@ -47,7 +47,10 @@ import time
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 from email.header import Header
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+
+import html as _html
 
 # ------------------------- 配置区 -------------------------
 WATCH_HEROES = ["阿轲", "司马懿"]          # 想盯的英雄，可随意增减
@@ -167,6 +170,34 @@ def save_state(state):
     with open(STATE_FILE, "w", encoding="utf-8") as fh:
         json.dump(state, fh, ensure_ascii=False, indent=2, sort_keys=True)
         fh.write("\n")
+
+
+def md_to_html(md_text):
+    """把推送用的轻量 Markdown 转成 HTML 邮件正文（图片/加粗/链接/换行）。"""
+    out = []
+    for line in md_text.splitlines():
+        esc = _html.escape(line)
+        h = re.match(r"^###\s+(.*)$", esc)
+        if h:
+            out.append(f"<h3 style=\"margin:14px 0 6px;\">{h.group(1)}</h3>")
+            continue
+        img = re.search(r"!\[([^\]]*)\]\(([^)]+)\)", esc)
+        if img:
+            out.append(
+                f'<img src="{img.group(2)}" alt="{img.group(1)}" '
+                f'style="max-width:180px;border-radius:8px;display:block;margin:6px 0;">'
+            )
+            continue
+        esc = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', esc)
+        esc = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", esc)
+        esc = re.sub(r'(?<!href=")(?<!">)(https?://[^\s<]+)', r'<a href="\1">\1</a>', esc)
+        if esc.startswith("- "):
+            esc = "&bull; " + esc[2:]
+        out.append("<br>" if not esc.strip() else esc + "<br>")
+    return (
+        '<div style="font-family:-apple-system,Segoe UI,Microsoft YaHei,sans-serif;'
+        'font-size:15px;line-height:1.8;">' + "".join(out) + "</div>"
+    )
 
 
 # ------------------------- 数据抓取 -------------------------
@@ -392,6 +423,7 @@ def detect(state):
                     f"- 获取方式：{meta['acquire'] or '未标注'}",
                     f"- 皮肤 ID：{meta['id'] or '—'}",
                 ] + ([f"- 简介：{meta['desc']}"] if meta["desc"] else [])
+                  + ([f"  ![{name}]({meta['poster']})"] if meta.get("poster") else [])
                   + ([f"- 详情：{meta['url']}"] if meta["url"] else []),
             })
 
@@ -528,7 +560,9 @@ def push_mail(subject, content):
         return False
     port = int(os.getenv("SMTP_PORT", "465") or 465)
 
-    msg = MIMEText(content, "plain", "utf-8")
+    msg = MIMEMultipart("alternative")
+    msg.attach(MIMEText(content, "plain", "utf-8"))
+    msg.attach(MIMEText(md_to_html(content), "html", "utf-8"))
     msg["Subject"] = Header(subject, "utf-8")
     msg["From"] = user
     msg["To"] = to_addr
@@ -604,6 +638,8 @@ def main():
                     f"- **{hero}**：图鉴收录 {len(skins)} 款，最新为「{newest[0]}」"
                     f"（{newest[1]['quality'] or '未标注'}，{fmt_date(d)} 上线）"
                 )
+                if newest[1].get("poster"):
+                    lines.append(f"  ![{newest[0]}]({newest[1]['poster']})")
             else:
                 lines.append(f"- **{hero}**：图鉴中暂无记录")
         extra = ""
@@ -614,14 +650,11 @@ def main():
         notify(
             "王者荣耀皮肤监控已启动",
             "监控已开始运行，之后每天北京时间 08:00 检查一次。\n\n"
-            "【这是干什么的】\n"
-            f"盯 {('、'.join(WATCH_HEROES))} 的皮肤动态：出「新皮肤」或「限时返场」就推送提醒，"
-            "数据全部来自官网公开接口（皮肤图鉴 + 官方公告），无需要登录游戏。\n\n"
+            "【当前基线】（之后只提醒比这更新的动态）\n" + "\n".join(lines) + extra + "\n\n"
             "【提醒规则】\n"
             f"- 新皮肤：上线后 {ALERT_WINDOW_DAYS} 天内每天提醒一次，错过当天第二天还能看到，过窗口自动停\n"
             "- 限时返场：按公告里的官方起止日期，开始前预告 + 期内每天提醒，到期自动停\n"
-            "- 没有新动态时一条消息都不发，不打扰\n\n"
-            "【当前基线】（之后只提醒比这更新的动态）\n" + "\n".join(lines) + extra,
+            "- 没有新动态时一条消息都不发，不打扰",
         )
         return 0
 

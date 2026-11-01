@@ -30,7 +30,7 @@
          返场皮肤：妲己-愿照·众生和、司空震-愿照·山河定、西施-续相思
          返场时间：10月24日0:00-10月30日23:59
          返场价格：1788点券/款
-     所以返场不靠"发现日+5天"估算，直接用官方的真实起止日期做倒计时。
+     所以返场不靠"发现日+固定窗口"估算，直接用官方的真实起止日期做倒计时。
      正文页还带 <time> 发布时间（含年份），用来补齐返场日期缺的年份。
 
   ⚠️ herolist.json（旧接口）的 skin_name 字段更新滞后：实测缺少阿轲「罗刹妄海」
@@ -51,7 +51,7 @@ from email.mime.text import MIMEText
 
 # ------------------------- 配置区 -------------------------
 WATCH_HEROES = ["阿轲", "司马懿"]          # 想盯的英雄，可随意增减
-ALERT_WINDOW_DAYS = 5                       # 上线/返场后连续提醒几天
+ALERT_WINDOW_DAYS = 10                      # 上线/返场后连续提醒几天
 SKIN_INDEX_URL = "https://pvp.qq.com/zlkdatasys/heroskinlist.json"
 NEWS_LIST_URL = "https://pvp.qq.com/web201706/newsindex.shtml"
 NEWS_DETAIL_URL = "https://pvp.qq.com/web201706/newsdetail.shtml?tid={tid}"
@@ -360,7 +360,7 @@ def is_noise(text):
 def detect(state):
     """
     返回 (candidates, new_state, first_run, index)。
-    candidates 里每个元素 = 一条"当前仍在 5 天窗口内"的动态。
+    candidates 里每个元素 = 一条"当前仍在提醒窗口内"的动态。
     """
     first_run = not state.get("initialized")
     seen_news = set(state.get("seen_news", []))
@@ -369,7 +369,7 @@ def detect(state):
 
     candidates = []
 
-    # ---- 1. 皮肤图鉴：按「上线日期」算窗口，5 天内天天提醒 ----
+    # ---- 1. 皮肤图鉴：按「上线日期」算窗口，窗口内天天提醒 ----
     index = fetch_skin_index()
     for hero in WATCH_HEROES:
         for name, meta in (index.get(hero) or {}).items():
@@ -599,9 +599,10 @@ def main():
                 default=None,
             )
             if newest:
+                d = parse_yyyymmdd(newest[1]["date"])
                 lines.append(
                     f"- **{hero}**：图鉴收录 {len(skins)} 款，最新为「{newest[0]}」"
-                    f"（{newest[1]['quality'] or '未标注'}）"
+                    f"（{newest[1]['quality'] or '未标注'}，{fmt_date(d)} 上线）"
                 )
             else:
                 lines.append(f"- **{hero}**：图鉴中暂无记录")
@@ -613,10 +614,14 @@ def main():
         notify(
             "王者荣耀皮肤监控已启动",
             "监控已开始运行，之后每天北京时间 08:00 检查一次。\n\n"
-            f"提醒规则：\n"
-            f"- 新皮肤：上线后 {ALERT_WINDOW_DAYS} 天内每天提醒一次\n"
-            "- 限时返场：按公告里的官方起止日期，开始前预告 + 期内每天提醒，到期自动停\n\n"
-            "当前基线：\n" + "\n".join(lines) + extra,
+            "【这是干什么的】\n"
+            f"盯 {('、'.join(WATCH_HEROES))} 的皮肤动态：出「新皮肤」或「限时返场」就推送提醒，"
+            "数据全部来自官网公开接口（皮肤图鉴 + 官方公告），无需要登录游戏。\n\n"
+            "【提醒规则】\n"
+            f"- 新皮肤：上线后 {ALERT_WINDOW_DAYS} 天内每天提醒一次，错过当天第二天还能看到，过窗口自动停\n"
+            "- 限时返场：按公告里的官方起止日期，开始前预告 + 期内每天提醒，到期自动停\n"
+            "- 没有新动态时一条消息都不发，不打扰\n\n"
+            "【当前基线】（之后只提醒比这更新的动态）\n" + "\n".join(lines) + extra,
         )
         return 0
 

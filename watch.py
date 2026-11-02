@@ -476,6 +476,7 @@ def detect(state):
                 continue                    # 不记已读：下次运行重新抓
             body, pub = got
             scanned_ok.add(tid)
+            log(f"  · 已检查公告 {tid}：正文 {len(body)} 字，发布 {pub or '未知'}")
             if not body or "返场" not in body:
                 continue
             for r in parse_return_blocks(body, pub, index):

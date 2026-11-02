@@ -9,7 +9,7 @@ on:
   workflow_dispatch:      # 支持手动点一次，方便测试
     inputs:
       test_hero:
-        description: "调试用：填英雄名（如 貂蝉）会用它最新皮肤发一条测试推送，不改 state.json"
+        description: "调试用：填英雄名（如 阿轲）按真实规则模拟检查一次，命中才发信，不改 state.json"
         required: false
         default: ""
       probe_tid:

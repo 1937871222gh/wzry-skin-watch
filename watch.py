@@ -423,21 +423,10 @@ def is_noise(text):
 
 
 # ------------------------- 核心检测 -------------------------
-def detect(state):
-    """
-    返回 (candidates, new_state, first_run, index)。
-    candidates 里每个元素 = 一条"当前仍在提醒窗口内"的动态。
-    """
-    first_run = not state.get("initialized")
-    seen_news = set(state.get("seen_news", []))
-    alerts = dict(state.get("alerts", {}))
-    today = today_cst()
-
-    candidates = []
-
-    # ---- 1. 皮肤图鉴：按「上线日期」算窗口，窗口内天天提醒 ----
-    index = fetch_skin_index(WATCH_HEROES)
-    for hero in WATCH_HEROES:
+def skin_window_candidates(index, heroes):
+    """图鉴里落在提醒窗口内的新皮肤 → candidates（检测与测试模式共用同一套规则）。"""
+    out = []
+    for hero in heroes:
         for name, meta in (index.get(hero) or {}).items():
             d = parse_yyyymmdd(meta["date"])
             if not d:
@@ -446,7 +435,7 @@ def detect(state):
             if age < 0 or age >= ALERT_WINDOW_DAYS:
                 continue        # 未上线 / 已过窗口，不提醒
             log(f"  ★ 窗口内新皮肤：{hero} · {name}（{age + 1} 天）")
-            candidates.append({
+            out.append({
                 "key": f"skin|{hero}|{name}",
                 "kind": "新皮肤",
                 "title": f"新皮肤 · {hero}「{name}」",
@@ -461,6 +450,72 @@ def detect(state):
                   + ([f"  ![{name}]({meta['poster']})"] if meta.get("poster") else [])
                   + ([f"- 详情：{meta['url']}"] if meta["url"] else []),
             })
+    return out
+
+
+def return_window_candidates(returns, index, heroes):
+    """已登记的返场里，按官方起止日期仍处于提醒期的条目 → candidates。"""
+    today = today_cst()
+    out = []
+    for key, r in sorted(returns.items()):
+        if r.get("hero") not in heroes:
+            continue
+        start = date.fromisoformat(r["start"]) if r.get("start") else \
+            date.fromisoformat(r["first_seen"])
+        if r.get("end"):
+            end = date.fromisoformat(r["end"])
+        else:
+            end = start + timedelta(days=ALERT_WINDOW_DAYS - 1)   # 无结束日期，退回固定窗口
+
+        if today > end:
+            continue                        # 已结束
+        if today < start:
+            lead = (start - today).days
+            if lead > 3:
+                continue                    # 还早，先不打扰
+            status = f"还有 {lead} 天开始"
+        else:
+            left = (end - today).days
+            status = "今天是最后一天" if left == 0 else f"还剩 {left} 天截止"
+
+        lines = [
+            f"- 返场时间：{fmt_date(start)} ~ {fmt_date(end)}（{status}）",
+        ]
+        if r.get("price"):
+            lines.append(f"- 返场价格：{r['price']}")
+        meta = (index.get(r["hero"]) or {}).get(r["skin"]) or {}
+        if meta.get("quality"):
+            lines.append(f"- 品质：{meta['quality']}")
+        if r.get("tid"):
+            lines.append(f"- 公告：《{r.get('title') or '官方公告'}》")
+            lines.append(f"- 链接：{NEWS_DETAIL_URL.format(tid=r['tid'])}")
+        log(f"  ★ 提醒期内返场：{r['hero']} · {r['skin']}（{status}）")
+        out.append({
+            "key": key,
+            "kind": "限时返场",
+            "title": f"限时返场 · {r['hero']}「{r['skin']}」",
+            "start": start,
+            "age": max(0, (today - start).days),
+            "lines": lines,
+        })
+    return out
+
+
+def detect(state):
+    """
+    返回 (candidates, new_state, first_run, index)。
+    candidates 里每个元素 = 一条"当前仍在提醒窗口内"的动态。
+    """
+    first_run = not state.get("initialized")
+    seen_news = set(state.get("seen_news", []))
+    alerts = dict(state.get("alerts", {}))
+    today = today_cst()
+
+    candidates = []
+
+    # ---- 1. 皮肤图鉴：按「上线日期」算窗口，窗口内天天提醒 ----
+    index = fetch_skin_index(WATCH_HEROES)
+    candidates.extend(skin_window_candidates(index, WATCH_HEROES))
 
     # ---- 2. 返场：用公告正文里的真实起止日期，期间内天天提醒 ----
     returns = dict(state.get("returns") or {})     # 已登记的返场条目，持久化避免重复抓取
@@ -498,45 +553,7 @@ def detect(state):
                     f"（{r['start'] or '起止未标'} ~ {r['end'] or '未标'}）")
 
     # 2b. 已登记的返场，按真实起止日期判断是否在提醒期
-    for key, r in sorted(returns.items()):
-        start = date.fromisoformat(r["start"]) if r.get("start") else \
-            date.fromisoformat(r["first_seen"])
-        if r.get("end"):
-            end = date.fromisoformat(r["end"])
-        else:
-            end = start + timedelta(days=ALERT_WINDOW_DAYS - 1)   # 无结束日期，退回固定窗口
-
-        if today > end:
-            continue                        # 已结束
-        if today < start:
-            lead = (start - today).days
-            if lead > 3:
-                continue                    # 还早，先不打扰
-            status = f"还有 {lead} 天开始"
-        else:
-            left = (end - today).days
-            status = "今天是最后一天" if left == 0 else f"还剩 {left} 天截止"
-
-        lines = [
-            f"- 返场时间：{fmt_date(start)} ~ {fmt_date(end)}（{status}）",
-        ]
-        if r.get("price"):
-            lines.append(f"- 返场价格：{r['price']}")
-        meta = (index.get(r["hero"]) or {}).get(r["skin"]) or {}
-        if meta.get("quality"):
-            lines.append(f"- 品质：{meta['quality']}")
-        if r.get("tid"):
-            lines.append(f"- 公告：《{r.get('title') or '官方公告'}》")
-            lines.append(f"- 链接：{NEWS_DETAIL_URL.format(tid=r['tid'])}")
-        log(f"  ★ 提醒期内返场：{r['hero']} · {r['skin']}（{status}）")
-        candidates.append({
-            "key": key,
-            "kind": "限时返场",
-            "title": f"限时返场 · {r['hero']}「{r['skin']}」",
-            "start": start,
-            "age": max(0, (today - start).days),
-            "lines": lines,
-        })
+    candidates.extend(return_window_candidates(returns, index, WATCH_HEROES))
 
     # ---- 3. 组装新状态 ----
     merged = {k: dict(v) for k, v in (state.get("skins") or {}).items()}
@@ -668,45 +685,59 @@ def run_probe(tid):
 
 def run_test_push(hero):
     """
-    调试用：指定英雄，用 TA 图鉴里最新一款皮肤发一条测试推送，验证推送通道。
-    不读写 state.json、不占用提醒次数，对每天的正常提醒零影响。
+    调试用：按真实规则（30 天窗口 / 返场期内 / 最多 3 次）模拟检查一个英雄，
+    命中的话把「正常模式本该发的那封」发出来，方便验证推送链路。
+    只读 state.json，不写、不占提醒次数。
     """
-    log(f"   [test] 测试推送模式，英雄={hero}（不会修改 state.json）")
+    log(f"   [test] 模拟检查 英雄={hero}｜窗口 {ALERT_WINDOW_DAYS} 天"
+        f"｜每个皮肤最多 {MAX_REMINDERS_PER_SKIN} 次（不改 state.json）")
     if not has_channel():
         log("!! [test] 没配置任何推送通道（PUSHPLUS_TOKEN 或 SMTP_HOST/SMTP_USER/SMTP_PASS/MAIL_TO）")
         return 1
-    index = fetch_skin_index("all")     # 测试模式取全部英雄，方便随便挑一个
-    if hero not in index:
-        near = [h for h in index if hero and (hero in h or h in hero)]
+
+    all_index = fetch_skin_index("all")     # 取全部英雄，方便随便挑一个来测
+    if hero not in all_index:
+        near = [h for h in all_index if hero and (hero in h or h in hero)]
         if near:
             log(f"   [test] 没有精确匹配「{hero}」，按「{near[0]}」处理")
             hero = near[0]
-    skins = index.get(hero) or {}
-    if not skins:
-        log(f"!! [test] 图鉴里没有「{hero}」，检查英雄名是否写对（如：貂蝉、李白、韩信）")
+    if not (all_index.get(hero) or {}):
+        log(f"!! [test] 图鉴里没有「{hero}」，检查英雄名是否写对（如：阿轲、司马懿、貂蝉）")
         return 1
-    newest = max(
-        ((n, m) for n, m in skins.items() if parse_yyyymmdd(m["date"])),
-        key=lambda kv: kv[1]["date"],
-        default=None,
-    )
-    name, meta = newest if newest else next(iter(skins.items()))
-    d = parse_yyyymmdd(meta["date"])
-    lines = [
-        "这是一条**测试推送**，只用来验证推送通道通不通，不代表真的有上新或返场。",
+
+    index = {hero: all_index[hero]}
+    state = load_state()                    # 只读：拿返场登记和已发次数
+    cands = skin_window_candidates(index, [hero]) + \
+        return_window_candidates(state.get("returns") or {}, index, [hero])
+    alerts = state.get("alerts") or {}
+    for c in cands:
+        c["sent"] = (alerts.get(c["key"]) or {}).get("count", 0)
+    to_send = [c for c in cands if c.get("sent", 0) < MAX_REMINDERS_PER_SKIN]
+
+    if not to_send:
+        if cands:
+            log(f"   [test] 「{hero}」窗口内的动态都已发满 {MAX_REMINDERS_PER_SKIN} 次，正常模式也不会再发")
+        else:
+            log(f"   [test] 「{hero}」当前没有 {ALERT_WINDOW_DAYS} 天内的新皮肤或返场"
+                f" → 正常模式同样不会发信（所以这里也不会发）")
+        return 0
+
+    body = [
+        f"检查时间：{now_cst().strftime('%Y-%m-%d %H:%M')}（北京时间）",
+        f"这是一次**模拟检查**（只测 {hero}）：规则与正常提醒完全一致，"
+        "但不写 state.json、不占提醒次数。",
         "",
-        f"### 测试样例 · {hero}「{name}」",
-        f"- 上线日期：{fmt_date(d) if d else '未标注'}",
-        f"- 品质：{meta['quality'] or '未标注'}",
-        f"- 获取方式：{meta['acquire'] or '未标注'}",
     ]
-    if meta.get("poster"):
-        lines.append(f"  ![{name}]({meta['poster']})")
-    if meta.get("url"):
-        lines.append(f"- 详情：{meta['url']}")
-    lines += ["", "- 收到这条说明推送链路正常；测试模式不改 state.json，也不计入「最多 3 次」的提醒次数。"]
-    configured, delivered = notify(f"[测试推送] {hero}「{name}」", "\n".join(lines))
-    log(f"   [test] 通道已配置={configured}，实际送达={delivered}")
+    for c in to_send:
+        body.append(f"### {c['title']}")
+        body.extend(c["lines"])
+        body.append(f"- 提醒进度：第 {c['sent'] + 1} 次 / 最多 {MAX_REMINDERS_PER_SKIN} 次")
+        body.append("")
+
+    subject = f"[测试] {to_send[0]['title']}" if len(to_send) == 1 else \
+        f"[测试] {hero}：{len(to_send)} 条动态"
+    configured, delivered = notify(subject, "\n".join(body))
+    log(f"   [test] 命中 {len(to_send)} 条窗口内动态，通道已配置={configured}，实际送达={delivered}")
     return 0 if delivered else 1
 
 

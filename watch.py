@@ -643,8 +643,25 @@ def notify(subject, markdown):
 
 
 # ------------------------- 主流程 -------------------------
+def run_probe(tid):
+    """调试用：只抓一条公告正文并打印结果，不读写状态、不发邮件。"""
+    log(f"   [probe] 抓取公告正文 tid={tid}")
+    got = fetch_news_body(tid)
+    if got is None:
+        log("!! [probe] 正文接口取不到（网络或接口异常）")
+        return 1
+    body, pub = got
+    log(f"   [probe] 取到正文 {len(body)} 字，发布时间 {pub or '未知'}")
+    log(f"   [probe] 含「返场」字样: {'返场' in body}")
+    log("   [probe] 开头片段: " + body[:100])
+    return 0
+
+
 def main():
     log(f"== 王者荣耀皮肤监控 | {now_cst().strftime('%Y-%m-%d %H:%M:%S')} 北京时间 ==")
+    probe_tid = os.environ.get("PROBE_TID", "").strip()
+    if probe_tid:
+        return run_probe(probe_tid)
     log(f"   监控英雄: {', '.join(WATCH_HEROES)}｜新皮肤窗口: {ALERT_WINDOW_DAYS} 天")
 
     state = load_state()

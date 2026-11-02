@@ -6,7 +6,12 @@ on:
     # 免费定时任务在整点高峰期排队严重（实测能晚 4 小时），
     # 故意提前到北京 07:00 触发，排队之后实际大约 07:10 ~ 08:00 之间跑完。
     - cron: "0 23 * * *"
-  workflow_dispatch: {}   # 支持手动点一次，方便测试
+  workflow_dispatch:      # 支持手动点一次，方便测试
+    inputs:
+      probe_tid:
+        description: "调试用：只抓这条公告正文并打印结果（留空＝正常跑一次监控）"
+        required: false
+        default: ""
 
 permissions:
   contents: write         # 需要把 state.json 提交回仓库
@@ -34,6 +39,7 @@ jobs:
           SMTP_USER: ${{ secrets.SMTP_USER }}
           SMTP_PASS: ${{ secrets.SMTP_PASS }}
           MAIL_TO: ${{ secrets.MAIL_TO }}
+          PROBE_TID: ${{ inputs.probe_tid }}
         run: python watch.py
 
       - name: 保存监控状态

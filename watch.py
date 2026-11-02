@@ -208,19 +208,28 @@ def md_to_html(md_text):
 
 
 # ------------------------- 数据抓取 -------------------------
-def fetch_skin_index():
-    """从皮肤图鉴接口取出关注英雄的皮肤，返回 {英雄: {皮肤名: meta}}。"""
+def fetch_skin_index(only=WATCH_HEROES):
+    """
+    从皮肤图鉴接口取皮肤，返回 {英雄: {皮肤名: meta}}。
+    only：只保留这些英雄；传字符串 "all" 表示全部英雄（测试推送用）。
+    """
     data = json.loads(decode_text(http_get(SKIN_INDEX_URL)))
     rows = data.get("pflb20_3469") or []
     if not rows:
         raise RuntimeError("图鉴接口结构变化：未找到 pflb20_3469 皮肤列表")
     log(f"  图鉴接口返回 {len(rows)} 条皮肤记录")
 
-    result = {h: {} for h in WATCH_HEROES}
+    wanted = None if only == "all" else set(only)
+    result = {} if wanted is None else {h: {} for h in wanted}
     for row in rows:
         hero = (row.get(F_HERO) or "").strip()
-        if hero not in result:
+        if not hero:
             continue
+        if wanted is not None:
+            if hero not in wanted:
+                continue
+        else:
+            result.setdefault(hero, {})
         name = (row.get(F_SKIN_NAME) or "").strip()
         if not name:
             continue
@@ -427,7 +436,7 @@ def detect(state):
     candidates = []
 
     # ---- 1. 皮肤图鉴：按「上线日期」算窗口，窗口内天天提醒 ----
-    index = fetch_skin_index()
+    index = fetch_skin_index(WATCH_HEROES)
     for hero in WATCH_HEROES:
         for name, meta in (index.get(hero) or {}).items():
             d = parse_yyyymmdd(meta["date"])
@@ -657,11 +666,58 @@ def run_probe(tid):
     return 0
 
 
+def run_test_push(hero):
+    """
+    调试用：指定英雄，用 TA 图鉴里最新一款皮肤发一条测试推送，验证推送通道。
+    不读写 state.json、不占用提醒次数，对每天的正常提醒零影响。
+    """
+    log(f"   [test] 测试推送模式，英雄={hero}（不会修改 state.json）")
+    if not has_channel():
+        log("!! [test] 没配置任何推送通道（PUSHPLUS_TOKEN 或 SMTP_HOST/SMTP_USER/SMTP_PASS/MAIL_TO）")
+        return 1
+    index = fetch_skin_index("all")     # 测试模式取全部英雄，方便随便挑一个
+    if hero not in index:
+        near = [h for h in index if hero and (hero in h or h in hero)]
+        if near:
+            log(f"   [test] 没有精确匹配「{hero}」，按「{near[0]}」处理")
+            hero = near[0]
+    skins = index.get(hero) or {}
+    if not skins:
+        log(f"!! [test] 图鉴里没有「{hero}」，检查英雄名是否写对（如：貂蝉、李白、韩信）")
+        return 1
+    newest = max(
+        ((n, m) for n, m in skins.items() if parse_yyyymmdd(m["date"])),
+        key=lambda kv: kv[1]["date"],
+        default=None,
+    )
+    name, meta = newest if newest else next(iter(skins.items()))
+    d = parse_yyyymmdd(meta["date"])
+    lines = [
+        "这是一条**测试推送**，只用来验证推送通道通不通，不代表真的有上新或返场。",
+        "",
+        f"### 测试样例 · {hero}「{name}」",
+        f"- 上线日期：{fmt_date(d) if d else '未标注'}",
+        f"- 品质：{meta['quality'] or '未标注'}",
+        f"- 获取方式：{meta['acquire'] or '未标注'}",
+    ]
+    if meta.get("poster"):
+        lines.append(f"  ![{name}]({meta['poster']})")
+    if meta.get("url"):
+        lines.append(f"- 详情：{meta['url']}")
+    lines += ["", "- 收到这条说明推送链路正常；测试模式不改 state.json，也不计入「最多 3 次」的提醒次数。"]
+    configured, delivered = notify(f"[测试推送] {hero}「{name}」", "\n".join(lines))
+    log(f"   [test] 通道已配置={configured}，实际送达={delivered}")
+    return 0 if delivered else 1
+
+
 def main():
     log(f"== 王者荣耀皮肤监控 | {now_cst().strftime('%Y-%m-%d %H:%M:%S')} 北京时间 ==")
     probe_tid = os.environ.get("PROBE_TID", "").strip()
     if probe_tid:
         return run_probe(probe_tid)
+    test_hero = os.environ.get("TEST_HERO", "").strip()
+    if test_hero:
+        return run_test_push(test_hero)
     log(f"   监控英雄: {', '.join(WATCH_HEROES)}｜新皮肤窗口: {ALERT_WINDOW_DAYS} 天")
 
     state = load_state()

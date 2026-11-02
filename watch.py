@@ -24,14 +24,14 @@
             pcljlb_9272 / mdljlb_1924  PC / 移动端皮肤详情页
        yxlb20_2489  英雄列表（约 133 条），含 yxid_a7（英雄 ID）、yxmclb_9965（英雄名）
   2) https://pvp.qq.com/web201706/newsindex.shtml      ← 公告列表（GBK）
-  3) https://1.pvp.qq.com/gicp/news/651/{tid}.html     ← 公告正文（真实数据源）
-     newsdetail.shtml?tid= 只是 JS 空壳，正文由上面的静态页渲染。
+  3) https://apps.game.qq.com/wmp/v3.1/public/searchNews.php?p0=18&source=web_pc&id={tid}
+     ← 公告正文。这是官网 SPA 自己用的内容接口，只认 tid、不依赖栏目号，
+       返回 JSON：msg.sContent=正文HTML、msg.sCreated=发布时间（含年月日）。
      正文里返场是结构化的，实测样本：
          返场皮肤：妲己-愿照·众生和、司空震-愿照·山河定、西施-续相思
          返场时间：10月24日0:00-10月30日23:59
          返场价格：1788点券/款
      所以返场不靠"发现日+固定窗口"估算，直接用官方的真实起止日期做倒计时。
-     正文页还带 <time> 发布时间（含年份），用来补齐返场日期缺的年份。
 
   ⚠️ herolist.json（旧接口）的 skin_name 字段更新滞后：实测缺少阿轲「罗刹妄海」
      （2026-03-06 上线的传说皮肤）。基线一律以图鉴接口为准。
@@ -59,7 +59,13 @@ MAX_REMINDERS_PER_SKIN = 3                 # 同款皮肤最多提醒几次后�
 SKIN_INDEX_URL = "https://pvp.qq.com/zlkdatasys/heroskinlist.json"
 NEWS_LIST_URL = "https://pvp.qq.com/web201706/newsindex.shtml"
 NEWS_DETAIL_URL = "https://pvp.qq.com/web201706/newsdetail.shtml?tid={tid}"
-NEWS_BODY_URL = "https://1.pvp.qq.com/gicp/news/651/{tid}.html"   # 正文真实地址
+# —— 取正文：官网 SPA 自己用的内容接口，只认 tid，与栏目号无关 ——
+# 返回 JSONP：var searchObj={"msg":{"sTitle":..,"sContent":<正文HTML>,"sCreated":"YYYY-MM-DD HH:MM:SS"}}
+# p0=18 是《王者荣耀》的 gameID（官网 newsdetail 页 fillNews.detail({gameID:18}) 确认）。
+# 不再猜测/拼接 gicp 静态页的栏目号（iDocType），单一数据源，干净可靠。
+GAME_ID = 18
+NEWS_API_URL = ("https://apps.game.qq.com/wmp/v3.1/public/searchNews.php"
+                "?p0={gid}&source=web_pc&id={tid}")
 STATE_FILE = "state.json"
 MAX_DETAIL_FETCH = 12                       # 每次最多抓几个新公告正文，控制耗时
 
@@ -252,31 +258,50 @@ def fetch_news_list():
     return items
 
 
-def fetch_news_body(tid):
-    """
-    抓公告正文（新闻页正文由 gicp 静态页渲染）。
-    返回 (纯文本, 发布日期 date|None)。抓不到返回 ("", None)。
-    """
-    try:
-        html = http_get(NEWS_BODY_URL.format(tid=tid), retries=2)
-    except Exception as exc:  # noqa: BLE001
-        log(f"  ! 公告正文抓取失败 tid={tid}: {exc}")
-        return "", None
-    text = decode_text(html)
-    pub = re.search(r"发布时间[:：]\s*<time>\s*(\d{4}-\d{2}-\d{2})\s*</time>", text)
-    pub_date = None
-    if pub:
-        try:
-            pub_date = date.fromisoformat(pub.group(1))
-        except ValueError:
-            pub_date = None
-    body = re.sub(r"<script[^>]*>.*?</script>", " ", text, flags=re.S | re.I)
+def _html_to_text(html):
+    """HTML 片段 → 纯文本（去脚本/样式/标签、还原常见实体、压缩空白）。"""
+    body = re.sub(r"<script[^>]*>.*?</script>", " ", html, flags=re.S | re.I)
     body = re.sub(r"<style[^>]*>.*?</style>", " ", body, flags=re.S | re.I)
     body = re.sub(r"<[^>]+>", " ", body)
     for a, b in (("&nbsp;", " "), ("&middot;", "·"), ("&ldquo;", ""),
                  ("&rdquo;", ""), ("&amp;", "&"), ("&quot;", '"')):
         body = body.replace(a, b)
-    return re.sub(r"\s+", " ", body), pub_date
+    return re.sub(r"\s+", " ", body)
+
+
+def fetch_news_body(tid):
+    """
+    抓公告正文：官网内容接口，只认 tid、与栏目号无关。
+    返回 (纯文本, 发布日期 date|None)：
+      - 抓取或解析失败返回 None（调用方据此不标记已读，下次运行自动重试）；
+      - 抓到但没有正文返回 ("", date|None)（属正常，可标记已读）。
+    """
+    try:
+        raw = http_get(NEWS_API_URL.format(gid=GAME_ID, tid=tid), retries=3)
+    except Exception as exc:  # noqa: BLE001
+        log(f"  ! 新闻接口取正文失败 tid={tid}: {exc}")
+        return None
+    s = decode_text(raw)
+    i, j = s.find("{"), s.rfind("}")   # 剥掉 JSONP 外壳（var searchObj=...; / cb(...)）
+    if i == -1 or j <= i:
+        log(f"  ! 新闻接口返回无法解析 tid={tid}")
+        return None
+    try:
+        obj = json.loads(s[i:j + 1])
+    except Exception:  # noqa: BLE001
+        log(f"  ! 新闻接口 JSON 解析失败 tid={tid}")
+        return None
+    msg = obj.get("msg") or {}
+    content = msg.get("sContent") or ""
+    pub_date = None
+    created = msg.get("sCreated") or ""
+    cm = re.match(r"(\d{4})-(\d{2})-(\d{2})", created)
+    if cm:
+        try:
+            pub_date = date(int(cm.group(1)), int(cm.group(2)), int(cm.group(3)))
+        except ValueError:
+            pub_date = None
+    return _html_to_text(content), pub_date
 
 
 # 「英雄-皮肤」文本形态，例如 妲己-愿照·众生和 / 公孙离-涂山容容
@@ -435,6 +460,7 @@ def detect(state):
     detail_checked = 0
 
     # 2a. 从「没见过的公告」里挖新返场
+    scanned_ok = set()          # 本次真正抓取成功并检查过的公告（决定是否标记已读）
     if not first_run:
         for item in news_items:
             tid, title = item["tid"], item["title"]
@@ -443,8 +469,13 @@ def detect(state):
             if detail_checked >= MAX_DETAIL_FETCH:
                 break
             detail_checked += 1
-            body, pub = fetch_news_body(tid)
+            got = fetch_news_body(tid)
             time.sleep(0.5)
+            if got is None:
+                log(f"  · 正文抓取失败，保留待下次重试 tid={tid}")
+                continue                    # 不记已读：下次运行重新抓
+            body, pub = got
+            scanned_ok.add(tid)
             if not body or "返场" not in body:
                 continue
             for r in parse_return_blocks(body, pub, index):
@@ -518,11 +549,14 @@ def detect(state):
         if end_s >= (today - timedelta(days=30)).isoformat():
             keep_returns[k] = r
 
+    # 首次运行：以当前公告列表为基线，全部标记已读，避免刚开始就补发一堆旧公告；
+    # 之后：只标记「本次真正抓取成功并检查过」的，抓取失败的留待下次重试（不遗漏）。
+    seen_after = set(cur_tids) if first_run else scanned_ok
     new_state = {
         "version": 5,
         "initialized": True,
         "skins": {h: merged.get(h, {}) for h in set(list(merged.keys()) + WATCH_HEROES)},
-        "seen_news": sorted(set(seen_news) | set(cur_tids))[-400:],
+        "seen_news": sorted(set(seen_news) | seen_after)[-400:],
         "alerts": new_alerts,
         "returns": keep_returns,
         "last_run_cst": now_cst().strftime("%Y-%m-%d %H:%M:%S"),

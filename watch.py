@@ -54,7 +54,8 @@ import html as _html
 
 # ------------------------- 配置区 -------------------------
 WATCH_HEROES = ["阿轲", "司马懿"]          # 想盯的英雄，可随意增减
-ALERT_WINDOW_DAYS = 10                      # 上线/返场后连续提醒几天
+ALERT_WINDOW_DAYS = 30                      # 上线/返场后连续提醒几天
+MAX_REMINDERS_PER_SKIN = 3                 # 同款皮肤最多提醒几次后停止（避免刷屏）
 SKIN_INDEX_URL = "https://pvp.qq.com/zlkdatasys/heroskinlist.json"
 NEWS_LIST_URL = "https://pvp.qq.com/web201706/newsindex.shtml"
 NEWS_DETAIL_URL = "https://pvp.qq.com/web201706/newsdetail.shtml?tid={tid}"
@@ -501,11 +502,13 @@ def detect(state):
     for hero, cur in index.items():
         merged.setdefault(hero, {}).update(cur)
 
-    new_alerts = dict(alerts)
+    new_alerts = {k: dict(v) for k, v in alerts.items()}
     for c in candidates:
-        new_alerts.setdefault(c["key"], {"first_seen": today.isoformat()})
-    # 只保留最近 60 天的提醒记录，避免文件无限膨胀
-    cutoff = (today - timedelta(days=60)).isoformat()
+        key = c["key"]
+        rec = new_alerts.setdefault(key, {"first_seen": today.isoformat(), "count": 0})
+        c["sent"] = rec.get("count", 0)
+    # 只保留最近 90 天的提醒记录，避免文件无限膨胀
+    cutoff = (today - timedelta(days=90)).isoformat()
     new_alerts = {k: v for k, v in new_alerts.items() if v.get("first_seen", "") >= cutoff}
 
     # 返场条目：结束后再留 30 天，之后清掉
@@ -654,30 +657,46 @@ def main():
             "【提醒规则】\n"
             f"- 新皮肤：上线后 {ALERT_WINDOW_DAYS} 天内每天提醒一次，错过当天第二天还能看到，过窗口自动停\n"
             "- 限时返场：按公告里的官方起止日期，开始前预告 + 期内每天提醒，到期自动停\n"
+            f"- 同一款皮肤最多提醒 {MAX_REMINDERS_PER_SKIN} 次后自动停止，避免刷屏\n"
             "- 没有新动态时一条消息都不发，不打扰",
         )
+        save_state(new_state)
         return 0
 
-    if not candidates:
-        log("   当前没有窗口内的新皮肤或返场，静默结束。")
+    # 同一款皮肤发满上限后不再发
+    to_send = [c for c in candidates if c.get("sent", 0) < MAX_REMINDERS_PER_SKIN]
+    if len(to_send) < len(candidates):
+        log(f"  跳过 {len(candidates) - len(to_send)} 条已达 {MAX_REMINDERS_PER_SKIN} 次上限的动态")
+
+    if not to_send:
+        log("   当前没有需要提醒的新皮肤或返场，静默结束。")
+        save_state(new_state)
         return 0
 
     body = [
         f"检查时间：{now_cst().strftime('%Y-%m-%d %H:%M')}（北京时间）",
-        f"共 {len(candidates)} 条动态仍在提醒期内：",
+        f"共 {len(to_send)} 条动态仍在提醒期内：",
         "",
     ]
-    for c in candidates:
+    for c in to_send:
         body.append(f"### {c['title']}")
         body.extend(c["lines"])
+        body.append(f"- 提醒进度：第 {c['sent'] + 1} 次 / 最多 {MAX_REMINDERS_PER_SKIN} 次")
         body.append("")
 
-    if len(candidates) == 1:
-        subject = f"[{candidates[0]['kind']}] {candidates[0]['title']}"
+    if len(to_send) == 1:
+        subject = f"[{to_send[0]['kind']}] {to_send[0]['title']}"
     else:
-        subject = f"王者荣耀：{len(candidates)} 条皮肤动态"
-    notify(subject, "\n".join(body))
-    log(f"   本次提醒 {len(candidates)} 条")
+        subject = f"王者荣耀：{len(to_send)} 条皮肤动态"
+    _, delivered = notify(subject, "\n".join(body))
+    if delivered:
+        for c in to_send:
+            rec = new_state["alerts"].setdefault(
+                c["key"], {"first_seen": today_cst().isoformat(), "count": 0}
+            )
+            rec["count"] = rec.get("count", 0) + 1
+    save_state(new_state)
+    log(f"   本次提醒 {len(to_send)} 条")
     return 0
 
 

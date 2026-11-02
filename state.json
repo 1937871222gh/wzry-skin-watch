@@ -1,0 +1,152 @@
+{
+  "alerts": {},
+  "initialized": true,
+  "last_run_cst": "2026-11-02 19:54:38",
+  "returns": {},
+  "seen_news": [
+    "802030",
+    "802257",
+    "802497",
+    "802499",
+    "802501",
+    "802562",
+    "802565",
+    "802584",
+    "808148",
+    "808149",
+    "808286",
+    "808290",
+    "808345",
+    "808363",
+    "808395",
+    "808401",
+    "808402",
+    "808403",
+    "808404",
+    "808562",
+    "808632",
+    "808696",
+    "808844",
+    "808854",
+    "808904",
+    "808909",
+    "808910",
+    "808911",
+    "808922",
+    "809094",
+    "809318",
+    "809513",
+    "809525",
+    "809831",
+    "809858",
+    "809860",
+    "809863",
+    "809869",
+    "809876",
+    "809878",
+    "809955",
+    "810034",
+    "810546",
+    "810597",
+    "810598",
+    "810599",
+    "810600"
+  ],
+  "skins": {
+    "司马懿": {
+      "九山相柳": {
+        "acquire": "商城限时直售",
+        "date": "20250808",
+        "desc": "山海有兽名相柳，九蛇首、居毒泽，他背负恩仇经营着九山古玩行，与白泽联手铲除了真正的邪恶。",
+        "id": "13703",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/057141225fb743b50fde237621b02618.jpg",
+        "quality": "史诗限定",
+        "url": "https://pvp.qq.com/ingame/all/tobe/skin/0808-jsxlsmy.html?ADTAG=pvp.skin.syzxpf"
+      },
+      "暗渊魔法": {
+        "acquire": "",
+        "date": "20211021",
+        "desc": "火焰与魔法，司马懿首款高级皮肤",
+        "id": "13702",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/0f3575ad754991dd802bec2b5d4b3bdb.jpg",
+        "quality": "",
+        "url": "https://pvp.qq.com/ingame/all/tobe/skin/1019-aymfsmy.html?ADTAG=pvp.skin.syzxpf"
+      },
+      "魇语军师": {
+        "acquire": "",
+        "date": "",
+        "desc": "",
+        "id": "13701",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/241832d590ff1e88ba24b6b0d90a0b6e.jpg",
+        "quality": "",
+        "url": ""
+      }
+    },
+    "阿轲": {
+      "化蝶舞": {
+        "acquire": "60点券限时秒杀",
+        "date": "20250307",
+        "desc": "让世界听见我们的歌声",
+        "id": "11606",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/f711d09f88e1dd7e8a22ba31e5e36ffc.jpg",
+        "quality": "",
+        "url": "https://pvp.qq.com/ingame/all/tobe/skin/0307-hdwak.html?ADTAG=pvp.skin.syzxpf"
+      },
+      "暗夜猫娘": {
+        "acquire": "",
+        "date": "",
+        "desc": "",
+        "id": "11602",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/e31847fd88747a7d3498533faba10145.jpg",
+        "quality": "",
+        "url": ""
+      },
+      "爱心护理": {
+        "acquire": "",
+        "date": "",
+        "desc": "",
+        "id": "11601",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/e9fa5801225319fed4b7eca5f3c8b626.jpg",
+        "quality": "",
+        "url": ""
+      },
+      "罗刹妄海": {
+        "acquire": "商城直售获取",
+        "date": "20260306",
+        "desc": "妖灵志异系列皮肤",
+        "id": "11608",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/4224d81d57d1fd9185491978257f54fb.jpg",
+        "quality": "传说",
+        "url": "https://pvp.qq.com/ingame/all/tobe/skin/0306-lcwhak.html?ADTAG=pvp.skin.syzxpf"
+      },
+      "致命风华": {
+        "acquire": "",
+        "date": "",
+        "desc": "",
+        "id": "11603",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/280a75edb747f559f0c93436a9e1716d.jpg",
+        "quality": "",
+        "url": ""
+      },
+      "节奏热浪": {
+        "acquire": "",
+        "date": "20181005",
+        "desc": "荧光棒可不是用来加油的",
+        "id": "11604",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/f31b140f331c8586e4374cf610701322.jpg",
+        "quality": "",
+        "url": "https://pvp.qq.com/ingame/all/tobe/skin/0929-jiezouak.html?ADTAG=pvp.skin.syzxpf"
+      },
+      "迷踪丽影": {
+        "acquire": "",
+        "date": "20200331",
+        "desc": "S19荣耀战令，探险主题",
+        "id": "11605",
+        "poster": "https://game-1255653016.file.myqcloud.com/manage/compress/custom_wzry_A1/6dc0e2bfa69d5243408746be061b9a71.jpg",
+        "quality": "",
+        "url": "https://pvp.qq.com/ingame/all/tobe/skin/0326-mzlyak.html?ADTAG=pvp.skin.syzxpf"
+      }
+    }
+  },
+  "version": 5
+}

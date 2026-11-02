@@ -38,8 +38,9 @@ jobs:
         run: |
           git config user.name "skin-watch-bot"
           git config user.email "skin-watch-bot@users.noreply.github.com"
-          if ! git diff --quiet -- state.json; then
-            git add state.json
+          # state.json 首次生成时是"未跟踪"文件，git diff 看不见它，必须先 add
+          git add state.json
+          if ! git diff --cached --quiet -- state.json; then
             git commit -m "chore: 更新皮肤监控状态 [skip ci]"
             git push
           else

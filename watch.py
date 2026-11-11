@@ -300,7 +300,12 @@ def fetch_news_body(tid):
     except Exception:  # noqa: BLE001
         log(f"  ! 新闻接口 JSON 解析失败 tid={tid}")
         return None
-    msg = obj.get("msg") or {}
+    # 防御：接口被限流/出错时 msg 可能是字符串（如"系统繁忙"）而非对象，
+    # 不判型直接 .get() 会抛 AttributeError 炸掉整个任务（2026-11-11 实测踩坑）。
+    if not isinstance(obj, dict) or not isinstance(obj.get("msg"), dict):
+        log(f"  ! 新闻接口返回异常形态（msg 非对象，多半是限流/错误响应），保留待下次重试 tid={tid}")
+        return None
+    msg = obj["msg"]
     content = msg.get("sContent") or ""
     pub_date = None
     created = msg.get("sCreated") or ""
@@ -533,7 +538,12 @@ def detect(state):
             if detail_checked >= MAX_DETAIL_FETCH:
                 break
             detail_checked += 1
-            got = fetch_news_body(tid)
+            try:
+                got = fetch_news_body(tid)
+            except Exception as exc:  # noqa: BLE001
+                # 单条公告解析异常不拖垮整个任务：记日志、不标记已读、明天自动重试
+                log(f"  ! 公告 {tid} 处理异常（保留待下次重试）: {exc}")
+                got = None
             time.sleep(0.5)
             if got is None:
                 log(f"  · 正文抓取失败，保留待下次重试 tid={tid}")
